@@ -10,59 +10,69 @@ def eye_aspect_ratio(eye):
     C = dist.euclidean(eye[0], eye[3])
     ear = (A + B) / (2.0 * C)
     return ear
-
-# EAR eşik değeri, göz kapalıysa daha düşük olur
-EYE_AR_THRESH = 0.21
-EYE_AR_CONSEC_FRAMES = 3
-
-# sayaçlar
-counter = 0
-total_blinks = 0
-
-# dlib'in yüz algılayıcısı ve göz landmark modeli
+# Yüz işaretleyici modelini yükleme
 detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
+predictor = dlib.shape_predictor('shape_predictor_68_face_landmarks.dat')
 
-# göz indeksleri (sol ve sağ)
-(lStart, lEnd) = face_utils.FACIAL_LANDMARKS_IDXS["left_eye"]
-(rStart, rEnd) = face_utils.FACIAL_LANDMARKS_IDXS["right_eye"]
+#Göz işaret noktaları için index'leri alma
+(lStart, lEnd) = face_utils.FACIAL_LANDMARKS_IDXS['left_eye']
+(rStart, rEnd) = face_utils.FACIAL_LANDMARKS_IDXS['right_eye']
 
-# kamera başlat
-cap = cv2.VideoCapture(0)
+#Video kaynağını açma
+cap  = cv2.VideoCapture(0)
+
+blink_count = 0
+frame_counter = 0
 
 while True:
     ret, frame = cap.read()
-    if not ret:
-        break
     gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    rects = detector(gray, 0)
 
-    for rect in rects:
-        shape = predictor(gray, rect)
+    # Yüz tespiti yap
+    faces  = detector(gray, 0)
+
+    for face in faces:
+        shape = predictor(gray, face)
         shape = face_utils.shape_to_np(shape)
 
-        leftEye = shape[lStart:lEnd]
-        rightEye = shape[rStart:rEnd]
+        # Sol ve Sağ göz işaret noktalarını al
+        leftEye  = shape[lStart: lEnd]
+        rightEye = shape[rStart: rEnd]
+
+        # göz kırpma oranı
         leftEAR = eye_aspect_ratio(leftEye)
-        rightEAR = eye_aspect_ratio(rightEye)
+        rightEar  = eye_aspect_ratio(rightEye)
 
-        ear = (leftEAR + rightEAR) / 2.0
+        ear = (leftEAR + rightEar ) / 2
 
-        # göz kapalıysa sayacı artır
-        if ear < EYE_AR_THRESH:
-            counter += 1
+        # Göz kapaklarınını çizdir
+        leftEyeHull =cv2.convexHull(leftEye)
+        rightEyeHull =cv2.convexHull(rightEye)
+
+        cv2.drawContours(frame, [leftEyeHull], -1, (0, 255, 0), 1)
+        cv2.drawContours(frame, [rightEyeHull], -1 , (0,255,0), 1)
+
+        #Göz kırpma oranı belli bir eşikten küçük ise
+        if  ear < 0.25:
+            frame_counter += 1
         else:
-            if counter >= EYE_AR_CONSEC_FRAMES:
-                total_blinks += 1
-            counter = 0
+            #Gözler birkaç çerçeve kapalı kaldıktan sonra açıldığında göz kırpma say
+            if frame_counter >=3 :
+                blink_count += 1
+                frame_counter = 0
+    
+    # Göz kırpmayı çerçevede göster 
+    cv2.putText(frame, f'Göz kırpma Sayısı : {blink_count}', (10,60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255,255,255), 2)
 
-        # görsel ekle
-        cv2.putText(frame, f"Göz kırpma sayısı: {total_blinks}", (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+    # Çerçeveyi göster
+    cv2.imshow('Göz kırpma algılama', frame)
 
-    cv2.imshow("Goz Kirpma Sayaci", frame)
-    if cv2.waitKey(1) == 27:  # ESC tuşu
+    # 'q' tuşuna basılırsa çık
+    if cv2.waitKey(1) & 0xFF == ord('q'):
         break
 
+# Kaynakları serbest bırak
 cap.release()
 cv2.destroyAllWindows()
+print(f'Toplamda {blink_count} kere göz kırptınız.')
+
